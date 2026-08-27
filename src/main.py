@@ -21,15 +21,16 @@ class TmuxManager(App):
         Binding("q", "quit", "Quit"),
         Binding("x", "new_session", "New Session"), 
         Binding("delete", "kill_session", "Kill Session"),
-        Binding("ctrl+a", "escape_terminal", "Escape to Sidebar"),
     ]
 
     def compose(self) -> ComposeResult:
         yield Header()
         with Horizontal():
             with Vertical(id="left-pane"):
+                yield Static("Sessions", classes="pane-title")
                 yield ListView(id="session-list")
             with Vertical(id="right-pane"):
+                yield Static("Live Stream Preview", classes="pane-title")
                 yield Static("Select a session to preview...", id="preview-window")
         yield Footer()
 

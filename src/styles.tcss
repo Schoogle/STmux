@@ -1,21 +1,95 @@
+/* Global Screen Setup */
+Screen {
+    background: #11111b;
+    color: #cdd6f4;
+}
+
+/* Header & Footer */
+Header {
+    background: #181825;
+    color: #89b4fa;
+    height: 1;
+    text-style: bold;
+}
+
+Footer {
+    background: #181825;
+    color: #a6e3a1;
+    height: 1;
+}
+
+/* Layout container - no outer padding/margin for a tight fit */
+Horizontal {
+    padding: 0;
+    margin: 0;
+}
+
+/* Left Pane: Sessions Sidebar */
 #left-pane {
     width: 30%;
-    border-right: solid green;
+    border: round #89b4fa;
+    background: #181825;
+    height: 100%;
+    padding: 0 1;
+    margin: 0;
 }
 
+/* Right Pane: Live Stream Preview */
 #right-pane {
     width: 70%;
-    padding: 1;
+    border: round #a6e3a1;
+    background: #181825;
+    height: 100%;
+    padding: 0 1;
+    margin: 0;
 }
 
-/* Styles for our popup modal */
+/* Compact List View */
+ListView {
+    background: #181825;
+    height: 100%;
+    scrollbar-color: #45475a;
+    scrollbar-gutter: stable;
+}
+
+ListItem {
+    padding: 0 1;
+    height: 1;
+    background: #181825;
+    color: #cdd6f4;
+}
+
+/* The active selection highlight (Lazygit/Lazydocker accent) */
+ListItem.-highlight {
+    background: #313244;
+    color: #f38ba8;
+    text-style: bold;
+}
+
+/* Modal Dialog */
 #dialog {
     grid-size: 2;
     grid-gutter: 1 2;
     grid-rows: 1fr 3;
-    padding: 0 1;
-    width: 60;
-    height: 11;
-    border: thick $background 80%;
-    background: $surface;
+    padding: 1 2;
+    width: 46;
+    height: 9;
+    border: round #fab387;
+    background: #1e1e2e;
+}
+
+#dialog Label {
+    color: #cdd6f4;
+    text-style: bold;
+}
+
+Input {
+    background: #11111b;
+    border: solid #89b4fa;
+    color: #cdd6f4;
+    height: 3;
+}
+
+Input:focus {
+    border: solid #a6e3a1;
 }
