@@ -24,7 +24,7 @@ Horizontal {
 }
 
 #left-pane {
-    width: 30%;
+    width: 20%;
     border: round #61afef;
     background: #252525;
     height: 100%;
@@ -33,7 +33,7 @@ Horizontal {
 }
 
 #right-pane {
-    width: 70%;
+    width: 80%;
     border: round #98c379;
     background: #252525;
     height: 100%;

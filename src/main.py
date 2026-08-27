@@ -9,6 +9,8 @@ from screens import NewSessionScreen
 
 class TmuxManager(App):
     """A Textual application to manage tmux sessions."""
+    TITLE = "Smux Session Overview Tool"
+
     def __init__(self) -> None:
         super().__init__()
         self.current_session: str | None = None
@@ -64,7 +66,14 @@ class TmuxManager(App):
                 raise subprocess.CalledProcessError(1, "tmux")
                 
             for session in valid_sessions:
-                list_view.add_option(Option(session, id=session))
+                # Truncate display name if it exceeds 20 characters
+                if len(session) > 20:
+                    display_name = session[:17] + "..."
+                else:
+                    display_name = session
+                
+                # Display the truncated name, but keep the full session in the id!
+                list_view.add_option(Option(display_name, id=session))
                 
             # If options were added and nothing is highlighted, highlight the first one
             if valid_sessions and list_view.highlighted is None:
