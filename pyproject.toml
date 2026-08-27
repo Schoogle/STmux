@@ -10,12 +10,13 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "textual>=8.2.8",
-    "textual-tty>=0.4.0",
 ]
 
 [project.scripts]
-smux = "smux:main"
+smux = "main:main"
 
 [tool.setuptools.packages.find]
-where = ["."]
-include = ["src*"]
+where = ["src"]
+
+[tool.setuptools.package-data]
+"*" = ["*.tcss"]

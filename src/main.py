@@ -16,7 +16,7 @@ class TmuxManager(App):
         self.current_session: str | None = None
         self.preview_timer = None
 
-    # Point to the external stylesheet
+    # Point to external stylesheet
     CSS_PATH = "styles.tcss"
 
     BINDINGS = [
@@ -35,7 +35,7 @@ class TmuxManager(App):
         yield Footer()
 
     def on_mount(self) -> None:
-        # Set the native border titles here
+        # Set border titles
         self.query_one("#left-pane").border_title = "Sessions"
         self.query_one("#right-pane").border_title = "Live Preview"
         
@@ -51,7 +51,7 @@ class TmuxManager(App):
         list_view = self.query_one("#session-list", OptionList)
         list_view.clear_options()
         
-        # Immediately clear the current session to prevent ghost polling
+        # Clear the current session to prevent ghost polling
         self.current_session = None
         
         try:
@@ -72,7 +72,7 @@ class TmuxManager(App):
                 else:
                     display_name = session
                 
-                # Display the truncated name, but keep the full session in the id!
+                # Display the truncated name, but keep the full session in the id
                 list_view.add_option(Option(display_name, id=session))
                 
             # If options were added and nothing is highlighted, highlight the first one
@@ -111,7 +111,7 @@ class TmuxManager(App):
                 subprocess.run(["tmux", "new-session", "-d", "-s", session_name])
                 self.refresh_sessions()
 
-        # Push the popup screen we imported from screens.py
+        # Push the popup screen
         self.push_screen(NewSessionScreen(), check_result)
 
     async def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
@@ -124,6 +124,8 @@ class TmuxManager(App):
             self.preview_timer.pause()
             
         with self.suspend():
+            # Clear screen buffer instantly to prevent the text flash artifact
+            print("\033[2J\033[H", end="", flush=True)
             subprocess.run(["tmux", "attach-session", "-t", session_name])
             
         self.refresh_sessions()
@@ -143,9 +145,13 @@ class TmuxManager(App):
         # Tell tmux to kill it in the background
         subprocess.run(["tmux", "kill-session", "-t", session_name])
         
-        # Instantly refresh the UI to remove it from the list
+        # Refresh the UI to remove it from the list
         self.refresh_sessions()
 
-if __name__ == "__main__":
+def main() -> None:
+    """Entry point for the Smux command-line application."""
     app = TmuxManager()
     app.run()
+
+if __name__ == "__main__":
+    main()
