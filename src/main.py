@@ -1,8 +1,8 @@
 import subprocess
-import traceback
 from textual.app import App, ComposeResult
 from textual.containers import Horizontal, Vertical
-from textual.widgets import Header, Footer, ListView, ListItem, Label, Static
+from textual.widgets import Header, Footer, OptionList, Static
+from textual.widgets.option_list import Option
 from textual.binding import Binding
 from rich.text import Text
 from screens import NewSessionScreen
@@ -27,16 +27,17 @@ class TmuxManager(App):
         yield Header()
         with Horizontal():
             with Vertical(id="left-pane"):
-                yield Static("Sessions", classes="pane-title")
-                yield ListView(id="session-list")
+                yield OptionList(id="session-list")
             with Vertical(id="right-pane"):
-                yield Static("Live Stream Preview", classes="pane-title")
                 yield Static("Select a session to preview...", id="preview-window")
         yield Footer()
 
     def on_mount(self) -> None:
+        # Set the native border titles here
+        self.query_one("#left-pane").border_title = "Sessions"
+        self.query_one("#right-pane").border_title = "Live Preview"
+        
         self.refresh_sessions()
-        # Start a background timer that triggers every 1.0 seconds
         self.preview_timer = self.set_interval(1.0, self.tick_preview)
     
     def tick_preview(self) -> None:
@@ -45,8 +46,11 @@ class TmuxManager(App):
             self.update_preview(self.current_session)
 
     def refresh_sessions(self) -> None:
-        list_view = self.query_one("#session-list", ListView)
-        list_view.clear()
+        list_view = self.query_one("#session-list", OptionList)
+        list_view.clear_options()
+        
+        # Immediately clear the current session to prevent ghost polling
+        self.current_session = None
         
         try:
             result = subprocess.check_output(
@@ -55,22 +59,29 @@ class TmuxManager(App):
             )
             sessions = result.strip().split("\n")
             
-            for session in sessions:
-                if session:
-                    list_view.append(ListItem(Label(session), name=session))
+            valid_sessions = [s for s in sessions if s]
+            if not valid_sessions:
+                raise subprocess.CalledProcessError(1, "tmux")
+                
+            for session in valid_sessions:
+                list_view.add_option(Option(session, id=session))
+                
+            # If options were added and nothing is highlighted, highlight the first one
+            if valid_sessions and list_view.highlighted is None:
+                list_view.highlighted = 0
+                
         except subprocess.CalledProcessError:
-            self.current_session = None # Stop the timer from looking for ghosts
+            self.current_session = None
             self.query_one("#preview-window", Static).update(
                 "No active tmux sessions found.\n\nPress 'X' to create a new session!"
             )
 
-    def on_list_view_highlighted(self, event: ListView.Highlighted) -> None:
-        if not event.item or not event.item.name:
+    def on_option_list_option_highlighted(self, event: OptionList.OptionHighlighted) -> None:
+        if not event.option or not event.option.id:
             self.current_session = None
             return
         
-        # Track the newly highlighted session and instantly preview it
-        self.current_session = event.item.name
+        self.current_session = event.option.id
         self.update_preview(self.current_session)
 
     def update_preview(self, session_name: str) -> None:
@@ -94,43 +105,37 @@ class TmuxManager(App):
         # Push the popup screen we imported from screens.py
         self.push_screen(NewSessionScreen(), check_result)
 
-    async def on_list_view_selected(self, event: ListView.Selected) -> None:
-        """Fires when you press Enter. Suspends TUI and attaches to native tmux."""
-        if not event.item or not event.item.name:
+    async def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
+        if not event.option or not event.option.id:
             return
             
-        session_name = event.item.name
+        session_name = event.option.id
         
-        # 1. Pause the background snapshot loop so it doesn't fight the terminal
         if self.preview_timer:
             self.preview_timer.pause()
             
-        # 2. Seamlessly suspend the TUI and drop into native tmux
         with self.suspend():
             subprocess.run(["tmux", "attach-session", "-t", session_name])
             
-        # 3. You detached! Resume the UI and background loop instantly
         self.refresh_sessions()
         if self.preview_timer:
             self.preview_timer.resume()
     
     def action_kill_session(self) -> None:
-        """Fires when 'd' is pressed. Kills the highlighted tmux session."""
-        list_view = self.query_one("#session-list", ListView)
-        
-        # Ensure a session is actually highlighted
-        if list_view.highlighted_child is None:
+        """Fires when 'delete' is pressed. Kills the highlighted tmux session."""
+        if not self.current_session:
             return
             
-        # Safely extract the session name
-        session_name = list_view.highlighted_child.name
+        session_name = self.current_session
         
-        if session_name:
-            # Tell tmux to kill it in the background
-            subprocess.run(["tmux", "kill-session", "-t", session_name])
-            
-            # Instantly refresh the UI to remove it from the list
-            self.refresh_sessions()
+        # Clear tracker immediately before killing
+        self.current_session = None
+        
+        # Tell tmux to kill it in the background
+        subprocess.run(["tmux", "kill-session", "-t", session_name])
+        
+        # Instantly refresh the UI to remove it from the list
+        self.refresh_sessions()
 
 if __name__ == "__main__":
     app = TmuxManager()
