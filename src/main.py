@@ -1,19 +1,18 @@
 import subprocess
+import traceback
 from textual.app import App, ComposeResult
 from textual.containers import Horizontal, Vertical
 from textual.widgets import Header, Footer, ListView, ListItem, Label, Static
 from textual.binding import Binding
 from rich.text import Text
-
-# Import our custom popup from the new file
 from screens import NewSessionScreen
 
 class TmuxManager(App):
+    """A Textual application to manage tmux sessions."""
     def __init__(self) -> None:
         super().__init__()
         self.current_session: str | None = None
         self.preview_timer = None
-    """A Textual application to manage tmux sessions."""
 
     # Point to the external stylesheet
     CSS_PATH = "styles.tcss"
@@ -21,8 +20,8 @@ class TmuxManager(App):
     BINDINGS = [
         Binding("q", "quit", "Quit"),
         Binding("x", "new_session", "New Session"), 
-        Binding("enter", "attach_session", "Attach (Live Mode)"),
         Binding("delete", "kill_session", "Kill Session"),
+        Binding("ctrl+a", "escape_terminal", "Escape to Sidebar"),
     ]
 
     def compose(self) -> ComposeResult:
@@ -60,7 +59,9 @@ class TmuxManager(App):
                     list_view.append(ListItem(Label(session), name=session))
         except subprocess.CalledProcessError:
             self.current_session = None # Stop the timer from looking for ghosts
-            self.query_one("#preview-window", Static).update("No active tmux sessions found.")
+            self.query_one("#preview-window", Static).update(
+                "No active tmux sessions found.\n\nPress 'X' to create a new session!"
+            )
 
     def on_list_view_highlighted(self, event: ListView.Highlighted) -> None:
         if not event.item or not event.item.name:
@@ -70,10 +71,6 @@ class TmuxManager(App):
         # Track the newly highlighted session and instantly preview it
         self.current_session = event.item.name
         self.update_preview(self.current_session)
-        
-        # Read the session name safely from the ListItem's name attribute
-        session_name = event.item.name
-        self.update_preview(session_name)
 
     def update_preview(self, session_name: str) -> None:
         preview_window = self.query_one("#preview-window", Static)
@@ -96,27 +93,25 @@ class TmuxManager(App):
         # Push the popup screen we imported from screens.py
         self.push_screen(NewSessionScreen(), check_result)
 
-    def action_attach_session(self) -> None:
-        list_view = self.query_one("#session-list", ListView)
-        
-        if list_view.highlighted_child is None:
+    async def on_list_view_selected(self, event: ListView.Selected) -> None:
+        """Fires when you press Enter. Suspends TUI and attaches to native tmux."""
+        if not event.item or not event.item.name:
             return
             
-        session_name = list_view.highlighted_child.name
+        session_name = event.item.name
         
-        if session_name:
-            # 1. PAUSE the background loop so it doesn't break the terminal
-            if self.preview_timer:
-                self.preview_timer.pause()
-                
-            # 2. Suspend and attach
-            with self.suspend():
-                subprocess.run(["tmux", "attach-session", "-t", session_name])
-                
-            # 3. We are back! Refresh the UI and RESUME the background loop
-            self.refresh_sessions()
-            if self.preview_timer:
-                self.preview_timer.resume()
+        # 1. Pause the background snapshot loop so it doesn't fight the terminal
+        if self.preview_timer:
+            self.preview_timer.pause()
+            
+        # 2. Seamlessly suspend the TUI and drop into native tmux
+        with self.suspend():
+            subprocess.run(["tmux", "attach-session", "-t", session_name])
+            
+        # 3. You detached! Resume the UI and background loop instantly
+        self.refresh_sessions()
+        if self.preview_timer:
+            self.preview_timer.resume()
     
     def action_kill_session(self) -> None:
         """Fires when 'd' is pressed. Kills the highlighted tmux session."""

@@ -1,3 +1,7 @@
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "smux"
 version = "0.1.0"
@@ -6,11 +10,12 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "textual>=8.2.8",
+    "textual-tty>=0.4.0",
 ]
 
 [project.scripts]
 smux = "smux:main"
 
-[build-system]
-requires = ["uv_build>=0.12.6,<0.13.0"]
-build-backend = "uv_build"
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["src*"]
