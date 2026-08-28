@@ -18,6 +18,7 @@ class TmuxManager(App):
         self.current_session: str | None = None
         self.preview_timer = None
         self.search_query = ""
+        self.upside_down_sessions: set[str] = set()
 
     # Point to external stylesheet
     CSS_PATH = "styles.tcss"
@@ -30,6 +31,7 @@ class TmuxManager(App):
         Binding("shift+delete", "force_kill_session", "Force Kill", show=True),
         Binding("f", "search", "Search"),
         Binding("escape", "clear_search", "Clear Search", show=False),
+        Binding("u", "toggle_upside_down", "Upside Down", show=True, priority=True),
         Binding("f22", "dummy_back", "Back", key_display="◀", show=True),
         Binding("f23", "dummy_preview", "Preview", key_display="▶", show=True),
     ]
@@ -41,6 +43,18 @@ class TmuxManager(App):
     def action_dummy_back(self) -> None:
         """Dummy action for the Back footer anchor."""
         pass
+
+    def action_toggle_upside_down(self) -> None:
+        """Toggles the upside-down (reversed lines) state for the active session."""
+        if not self.current_session:
+            return
+            
+        if self.current_session in self.upside_down_sessions:
+            self.upside_down_sessions.remove(self.current_session)
+        else:
+            self.upside_down_sessions.add(self.current_session)
+            
+        self.refresh_sessions()
 
     def compose(self) -> ComposeResult:
         yield Header()
@@ -85,6 +99,7 @@ class TmuxManager(App):
             sessions = result.strip().split("\n")
             
             valid_sessions = [s for s in sessions if s]
+            valid_sessions.reverse()
             if not valid_sessions:
                 raise subprocess.CalledProcessError(1, "tmux")
                 
@@ -95,10 +110,14 @@ class TmuxManager(App):
             
             target_index = 0
             for i, session in enumerate(filtered_sessions):
-                if len(session) > 20:
-                    display_name = session[:17] + "..."
+                is_ud = session in self.upside_down_sessions
+                suffix = " [U]" if is_ud else ""
+                max_base_len = 20 - len(suffix)
+                
+                if len(session) > max_base_len:
+                    display_name = session[:max_base_len - 3] + "..." + suffix
                 else:
-                    display_name = session
+                    display_name = session + suffix
                 
                 list_view.add_option(Option(display_name, id=session))
                 
@@ -137,7 +156,10 @@ class TmuxManager(App):
             result = subprocess.check_output(
                 ["tmux", "capture-pane", "-ep", "-S", "-1000", "-t", session_name]
             )
-            ansi_text = Text.from_ansi(result.decode('utf-8'))
+            raw_text = result.decode('utf-8')
+            
+            # Natural top-to-bottom text order (no line reversal)
+            ansi_text = Text.from_ansi(raw_text)
             
             # 1. Capture state from the container
             is_focused = container.has_focus
@@ -146,11 +168,18 @@ class TmuxManager(App):
             # 2. Update the text
             preview_window.update(ansi_text)
             
-            # 3. Restore scroll on the container
+            # 3. Restore scroll or pin to top/bottom based on session settings
             def restore_scroll():
+                is_top_anchored = session_name in self.upside_down_sessions
+                
                 if is_focused:
+                    # Keep user's manual scroll position if they are actively reading it
                     container.scroll_to(current_x, current_y, animate=False)
+                elif is_top_anchored:
+                    # Pin to the very top so tools like htop show their header/top processes
+                    container.scroll_to(0, 0, animate=False)
                 else:
+                    # Default behavior: live tail at the bottom
                     container.scroll_end(animate=False)
                     
             self.set_timer(0.05, restore_scroll)
@@ -341,7 +370,13 @@ class TmuxManager(App):
         if self.query_one("#session-list").has_focus and self.current_session:
             container = self.query_one("#preview-container", ScrollableContainer)
             container.focus()
-            container.scroll_end(animate=False)
+            
+            # If the session is top-anchored ([U]), start at the top (0, 0). 
+            # Otherwise, tail the bottom like normal sessions.
+            if self.current_session in self.upside_down_sessions:
+                container.scroll_to(0, 0, animate=False)
+            else:
+                container.scroll_end(animate=False)
 
     def action_focus_list(self) -> None:
         """Shifts focus back to the session list, or moves text cursor if searching."""
