@@ -1,6 +1,6 @@
 import subprocess
 from textual.app import App, ComposeResult
-from textual.containers import Horizontal, Vertical
+from textual.containers import Horizontal, Vertical, ScrollableContainer
 from textual.widgets import Header, Footer, OptionList, Static
 from textual.widgets.option_list import Option
 from textual.binding import Binding
@@ -30,7 +30,17 @@ class TmuxManager(App):
         Binding("shift+delete", "force_kill_session", "Force Kill", show=True),
         Binding("f", "search", "Search"),
         Binding("escape", "clear_search", "Clear Search", show=False),
+        Binding("f22", "dummy_back", "Back", key_display="◀", show=True),
+        Binding("f23", "dummy_preview", "Preview", key_display="▶", show=True),
     ]
+
+    def action_dummy_preview(self) -> None:
+        """Dummy action for the Preview footer anchor."""
+        pass
+
+    def action_dummy_back(self) -> None:
+        """Dummy action for the Back footer anchor."""
+        pass
 
     def compose(self) -> ComposeResult:
         yield Header()
@@ -39,11 +49,12 @@ class TmuxManager(App):
                 yield Input(placeholder="Search sessions...", id="search-input", classes="hidden")
                 yield OptionList(id="session-list")
             with Vertical(id="right-pane"):
-                yield Static("Select a session to preview...", id="preview-window")
+                with ScrollableContainer(id="preview-container"):  
+                    yield Static("Select a session to preview...", id="preview-window")
         yield Footer()
 
     def on_mount(self) -> None:
-        # Set border titles
+        """Initializes the UI state and starts the background timers."""
         self.query_one("#left-pane").border_title = "Sessions"
         self.query_one("#right-pane").border_title = "Live Preview"
         
@@ -119,14 +130,32 @@ class TmuxManager(App):
         self.update_preview(self.current_session)
 
     def update_preview(self, session_name: str) -> None:
+        """Fetches terminal output and history from tmux to update the preview."""
+        container = self.query_one("#preview-container", ScrollableContainer)
         preview_window = self.query_one("#preview-window", Static)
         try:
             result = subprocess.check_output(
-                ["tmux", "capture-pane", "-ep", "-t", session_name]
+                ["tmux", "capture-pane", "-ep", "-S", "-1000", "-t", session_name]
             )
             ansi_text = Text.from_ansi(result.decode('utf-8'))
+            
+            # 1. Capture state from the container
+            is_focused = container.has_focus
+            current_x, current_y = container.scroll_offset
+            
+            # 2. Update the text
             preview_window.update(ansi_text)
-        except Exception as e:
+            
+            # 3. Restore scroll on the container
+            def restore_scroll():
+                if is_focused:
+                    container.scroll_to(current_x, current_y, animate=False)
+                else:
+                    container.scroll_end(animate=False)
+                    
+            self.set_timer(0.05, restore_scroll)
+                
+        except Exception:
             preview_window.update(f"Could not load preview for {session_name}.")
 
     def action_new_session(self) -> None:
@@ -263,21 +292,69 @@ class TmuxManager(App):
                     self.preview_timer.resume()
 
     async def on_key(self, event: Key) -> None:
-        """Intercepts raw key presses globally."""
+        """Intercepts raw key presses globally for custom pane navigation."""
         search_input = self.query_one("#search-input", Input)
+        list_view = self.query_one("#session-list", OptionList)
+        container = self.query_one("#preview-container", ScrollableContainer)
         
-        # If the search bar is open and active, we hijack the arrow keys.
-        # Focus NEVER leaves the text box, but the list moves in the background!
+        # Scenario 1: User is actively typing in the search box.
         if search_input.has_focus:
-            list_view = self.query_one("#session-list", OptionList)
-            
             if event.key == "down":
                 event.prevent_default()
                 list_view.action_cursor_down()
-                
             elif event.key == "up":
                 event.prevent_default()
                 list_view.action_cursor_up()
+                
+        # Scenario 2: User is navigating the session list.
+        elif list_view.has_focus:
+            if event.key == "right" and self.current_session:
+                event.prevent_default()
+                container.focus()
+                container.scroll_end(animate=False)
+                
+        # Scenario 3: User is scrolling the live preview.
+        elif container.has_focus:
+            if event.key == "left" or event.key == "escape":
+                event.prevent_default()
+                list_view.focus()
+
+    def action_scroll_preview(self) -> None:
+        """Fires when 'v' is pressed. Shifts focus to the preview pane for live scrolling."""
+        if not self.current_session:
+            return
+            
+        container = self.query_one("#preview-container", ScrollableContainer)
+        container.focus()
+        container.scroll_end(animate=False)
+
+    def action_focus_preview(self) -> None:
+        """Shifts focus to the preview pane, or moves text cursor if searching."""
+        search_input = self.query_one("#search-input", Input)
+        
+        # 1. If typing in the search box, just move the cursor right
+        if search_input.has_focus:
+            search_input.action_cursor_right()
+            return
+            
+        # 2. Otherwise, shift focus to the preview pane
+        if self.query_one("#session-list").has_focus and self.current_session:
+            container = self.query_one("#preview-container", ScrollableContainer)
+            container.focus()
+            container.scroll_end(animate=False)
+
+    def action_focus_list(self) -> None:
+        """Shifts focus back to the session list, or moves text cursor if searching."""
+        search_input = self.query_one("#search-input", Input)
+        
+        # 1. If typing in the search box, just move the cursor left
+        if search_input.has_focus:
+            search_input.action_cursor_left()
+            return
+            
+        # 2. Otherwise, shift focus back to the session list
+        if self.query_one("#preview-container").has_focus:
+            self.query_one("#session-list").focus()
 
 def main() -> None:
     """Entry point for the Smux command-line application."""
