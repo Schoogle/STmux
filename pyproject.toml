@@ -3,9 +3,9 @@ requires = ["setuptools"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "smux"
+name = "stmux"
 version = "0.1.0"
-description = "Add your description here"
+description = "Simple Tmux Session Overview Tool"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
@@ -13,7 +13,7 @@ dependencies = [
 ]
 
 [project.scripts]
-smux = "main:main"
+stmux = "main:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
