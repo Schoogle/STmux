@@ -130,3 +130,22 @@ Button#ok:focus {
 #search-input:focus {
     border: double #e5c07b; 
 }
+
+#preview-container {
+    height: 100%;
+    overflow: auto auto; /* The container handles the scrolling natively */
+    scrollbar-color: #5c6370;
+}
+
+#preview-window {
+    height: auto; /* Allows the text to grow infinitely tall inside the container */
+}
+
+#right-pane:focus-within {
+    border: round #e5c07b;
+}
+
+/*#preview-window {
+    width: auto;
+    content-align: left top;
+}*/
