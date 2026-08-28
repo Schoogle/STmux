@@ -165,6 +165,23 @@ class TmuxManager(App):
         """Fetches terminal output and history from tmux to update the preview."""
         container = self.query_one("#preview-container", ScrollableContainer)
         preview_window = self.query_one("#preview-window", Static)
+        
+        # 1. Grab the current width and height of the Textual preview container
+        width = container.size.width
+        height = container.size.height
+
+        # 2. Resize the underlying tmux window to match the pane dimensions
+        if width > 0 and height > 0:
+            try:
+                subprocess.run(
+                    ["tmux", "resize-window", "-t", session_name, "-x", str(width), "-y", str(height)],
+                    check=False,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL
+                )
+            except Exception:
+                pass
+
         try:
             result = subprocess.check_output(
                 ["tmux", "capture-pane", "-ep", "-S", "-1000", "-t", session_name]
@@ -186,13 +203,10 @@ class TmuxManager(App):
                 is_top_anchored = session_name in self.upside_down_sessions
                 
                 if is_focused:
-                    # Keep user's manual scroll position if they are actively reading it
                     container.scroll_to(current_x, current_y, animate=False)
                 elif is_top_anchored:
-                    # Pin to the very top so tools like htop show their header/top processes
                     container.scroll_to(0, 0, animate=False)
                 else:
-                    # Default behavior: live tail at the bottom
                     container.scroll_end(animate=False)
                     
             self.set_timer(0.05, restore_scroll)

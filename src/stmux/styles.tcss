@@ -144,3 +144,8 @@ Button#ok:focus {
 #right-pane:focus-within {
     border: round #e5c07b;
 }
+
+/*#preview-window {
+    width: auto;
+    content-align: left top;
+}*/
