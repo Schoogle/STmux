@@ -49,9 +49,11 @@ class TmuxManager(App):
 
     def refresh_sessions(self) -> None:
         list_view = self.query_one("#session-list", OptionList)
-        list_view.clear_options()
         
-        # Clear the current session to prevent ghost polling
+        # 1. Remember the session we were on before refreshing!
+        previous_session = self.current_session
+        
+        list_view.clear_options()
         self.current_session = None
         
         try:
@@ -64,20 +66,29 @@ class TmuxManager(App):
             valid_sessions = [s for s in sessions if s]
             if not valid_sessions:
                 raise subprocess.CalledProcessError(1, "tmux")
-                
-            for session in valid_sessions:
+            
+            target_index = 0
+            for i, session in enumerate(valid_sessions):
                 # Truncate display name if it exceeds 20 characters
                 if len(session) > 20:
                     display_name = session[:17] + "..."
                 else:
                     display_name = session
                 
-                # Display the truncated name, but keep the full session in the id
+                # Display the truncated name, but keep the full session in the id!
                 list_view.add_option(Option(display_name, id=session))
                 
-            # If options were added and nothing is highlighted, highlight the first one
-            if valid_sessions and list_view.highlighted is None:
-                list_view.highlighted = 0
+                # 2. Check if this was the session we were previously on
+                if session == previous_session:
+                    target_index = i
+                
+            # 3. Snap the highlight back to the session we just detached from (or 0)
+            if valid_sessions:
+                list_view.highlighted = target_index
+                
+                # 4. Force update the preview pane instantly to prevent stale text!
+                self.current_session = valid_sessions[target_index]
+                self.update_preview(self.current_session)
                 
         except subprocess.CalledProcessError:
             self.current_session = None
