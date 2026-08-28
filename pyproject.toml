@@ -13,7 +13,7 @@ dependencies = [
 ]
 
 [project.scripts]
-stmux = "main:main"
+stmux = "stmux.main:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
