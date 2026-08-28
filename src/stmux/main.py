@@ -105,17 +105,18 @@ class TmuxManager(App):
                 ["tmux", "list-sessions", "-F", "#{session_name}"], 
                 text=True
             )
-            sessions = result.strip().split("\n")
+            # Strip whitespace from each session line to prevent lookup mismatches
+            sessions = [s.strip() for s in result.strip().split("\n") if s.strip()]
             
-            valid_sessions = [s for s in sessions if s]
-            valid_sessions.reverse()
-            if not valid_sessions:
+            if not sessions:
                 raise subprocess.CalledProcessError(1, "tmux")
                 
+            reversed_sessions = list(reversed(sessions))
+                
             if self.search_query:
-                filtered_sessions = [s for s in valid_sessions if self.search_query in s.lower()]
+                filtered_sessions = [s for s in reversed_sessions if self.search_query in s.lower()]
             else:
-                filtered_sessions = valid_sessions
+                filtered_sessions = reversed_sessions
             
             target_index = 0
             for i, session in enumerate(filtered_sessions):
@@ -124,11 +125,14 @@ class TmuxManager(App):
                 max_base_len = 20 - len(suffix)
                 
                 if len(session) > max_base_len:
-                    display_name = session[:max_base_len - 3] + "..." + suffix
+                    base_display = session[:max_base_len - 3] + "..."
                 else:
-                    display_name = session + suffix
+                    base_display = session
                 
-                list_view.add_option(Option(display_name, id=session))
+                display_str = base_display + suffix
+                
+                # Wrap in Text() to treat [U] as literal text instead of a Rich markup tag
+                list_view.add_option(Option(Text(display_str), id=session))
                 
                 if session == previous_session:
                     target_index = i
