@@ -220,13 +220,22 @@ class TmuxManager(App):
         search_input.focus()
 
     def action_clear_search(self) -> None:
-        """Fires when 'escape' is pressed. Clears and hides search."""
+        """Clears and hides the search input, returning focus to the session list."""
         search_input = self.query_one("#search-input", Input)
-        # Only trigger if the search bar is actually visible
+        
         if not search_input.has_class("hidden"):
-            search_input.value = ""
+            # Preserve the active session state before clearing the input
+            preserved_session = self.current_session
+            
+            # Suppress Input.Changed to prevent asynchronous cursor resets
+            with search_input.prevent(Input.Changed):
+                search_input.value = ""
+                
             search_input.add_class("hidden")
             self.search_query = ""
+            
+            # Restore state and apply UI updates
+            self.current_session = preserved_session
             self.refresh_sessions()
             self.query_one("#session-list").focus()
 
@@ -238,7 +247,7 @@ class TmuxManager(App):
             self.refresh_sessions()
 
     async def on_input_submitted(self, event: Input.Submitted) -> None:
-        """Fires when Enter is pressed. Attaches to the top search result"""
+        """Attaches to the currently highlighted session upon form submission."""
         if event.input.id == "search-input":
             if self.current_session:
                 if self.preview_timer:
