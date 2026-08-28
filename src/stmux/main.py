@@ -6,6 +6,9 @@ from textual.widgets.option_list import Option
 from textual.binding import Binding
 from rich.text import Text
 from stmux.screens import NewSessionScreen, RenameSessionScreen, ConfirmDeleteScreen
+from textual.widgets import Header, Footer, OptionList, Static, Input
+from textual.events import Key
+
 class TmuxManager(App):
     """A Textual application to manage tmux sessions."""
     TITLE = "STmux Session Overview Tool"
@@ -14,6 +17,7 @@ class TmuxManager(App):
         super().__init__()
         self.current_session: str | None = None
         self.preview_timer = None
+        self.search_query = ""
 
     # Point to external stylesheet
     CSS_PATH = "styles.tcss"
@@ -24,12 +28,15 @@ class TmuxManager(App):
         Binding("r", "rename_session", "Rename"),
         Binding("delete", "kill_session", "Kill Session"),
         Binding("shift+delete", "force_kill_session", "Force Kill", show=True),
+        Binding("f", "search", "Search"),
+        Binding("escape", "clear_search", "Clear Search", show=False),
     ]
 
     def compose(self) -> ComposeResult:
         yield Header()
         with Horizontal():
             with Vertical(id="left-pane"):
+                yield Input(placeholder="Search sessions...", id="search-input", classes="hidden")
                 yield OptionList(id="session-list")
             with Vertical(id="right-pane"):
                 yield Static("Select a session to preview...", id="preview-window")
@@ -42,6 +49,8 @@ class TmuxManager(App):
         
         self.refresh_sessions()
         self.preview_timer = self.set_interval(1.0, self.tick_preview)
+        
+        self.query_one("#session-list").focus()
     
     def tick_preview(self) -> None:
         """The function called by the timer to update the preview."""
@@ -51,7 +60,7 @@ class TmuxManager(App):
     def refresh_sessions(self) -> None:
         list_view = self.query_one("#session-list", OptionList)
         
-        # 1. Remember the session we were on before refreshing!
+        # 1. Remember the session before refreshing
         previous_session = self.current_session
         
         list_view.clear_options()
@@ -67,29 +76,33 @@ class TmuxManager(App):
             valid_sessions = [s for s in sessions if s]
             if not valid_sessions:
                 raise subprocess.CalledProcessError(1, "tmux")
+                
+            if self.search_query:
+                filtered_sessions = [s for s in valid_sessions if self.search_query in s.lower()]
+            else:
+                filtered_sessions = valid_sessions
             
             target_index = 0
-            for i, session in enumerate(valid_sessions):
-                # Truncate display name if it exceeds 20 characters
+            for i, session in enumerate(filtered_sessions):
                 if len(session) > 20:
                     display_name = session[:17] + "..."
                 else:
                     display_name = session
                 
-                # Display the truncated name, but keep the full session in the id!
                 list_view.add_option(Option(display_name, id=session))
                 
-                # 2. Check if this was the session we were previously on
                 if session == previous_session:
                     target_index = i
                 
-            # 3. Snap the highlight back to the session we just detached from (or 0)
-            if valid_sessions:
+            if filtered_sessions:
                 list_view.highlighted = target_index
-                
-                # 4. Force update the preview pane instantly to prevent stale text!
-                self.current_session = valid_sessions[target_index]
+                self.current_session = filtered_sessions[target_index]
                 self.update_preview(self.current_session)
+            else:
+                self.current_session = None
+                self.query_one("#preview-window", Static).update(
+                    "No sessions match your search."
+                )
                 
         except subprocess.CalledProcessError:
             self.current_session = None
@@ -199,6 +212,63 @@ class TmuxManager(App):
         
         # Refresh the UI
         self.refresh_sessions()
+
+    def action_search(self) -> None:
+        """Fires when 'f' is pressed."""
+        search_input = self.query_one("#search-input", Input)
+        search_input.remove_class("hidden")
+        search_input.focus()
+
+    def action_clear_search(self) -> None:
+        """Fires when 'escape' is pressed. Clears and hides search."""
+        search_input = self.query_one("#search-input", Input)
+        # Only trigger if the search bar is actually visible
+        if not search_input.has_class("hidden"):
+            search_input.value = ""
+            search_input.add_class("hidden")
+            self.search_query = ""
+            self.refresh_sessions()
+            self.query_one("#session-list").focus()
+
+    def on_input_changed(self, event: Input.Changed) -> None:
+        """Fires every time a letter is typed in an Input."""
+        if event.input.id == "search-input":
+            self.search_query = event.value.lower()
+            self.current_session = None
+            self.refresh_sessions()
+
+    async def on_input_submitted(self, event: Input.Submitted) -> None:
+        """Fires when Enter is pressed. Attaches to the top search result"""
+        if event.input.id == "search-input":
+            if self.current_session:
+                if self.preview_timer:
+                    self.preview_timer.pause()
+                    
+                with self.suspend():
+                    print("\033[2J\033[H", end="", flush=True)
+                    subprocess.run(["tmux", "attach-session", "-t", self.current_session])
+                    
+                self.action_clear_search()
+                
+                if self.preview_timer:
+                    self.preview_timer.resume()
+
+    async def on_key(self, event: Key) -> None:
+        """Intercepts raw key presses globally."""
+        search_input = self.query_one("#search-input", Input)
+        
+        # If the search bar is open and active, we hijack the arrow keys.
+        # Focus NEVER leaves the text box, but the list moves in the background!
+        if search_input.has_focus:
+            list_view = self.query_one("#session-list", OptionList)
+            
+            if event.key == "down":
+                event.prevent_default()
+                list_view.action_cursor_down()
+                
+            elif event.key == "up":
+                event.prevent_default()
+                list_view.action_cursor_up()
 
 def main() -> None:
     """Entry point for the Smux command-line application."""

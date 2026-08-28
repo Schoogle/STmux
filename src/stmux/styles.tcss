@@ -114,3 +114,19 @@ Button#ok:focus {
     color: #e06c75;
     text-style: bold;
 }
+
+.hidden {
+    display: none;
+}
+
+#search-input {
+    height: 3;
+    border: solid #61afef;
+    background: #1e1e1e;
+    color: #dcdcdc;
+    margin-bottom: 1; 
+}
+
+#search-input:focus {
+    border: double #e5c07b; 
+}
