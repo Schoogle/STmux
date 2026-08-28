@@ -9,7 +9,7 @@ from stmux.screens import NewSessionScreen
 
 class TmuxManager(App):
     """A Textual application to manage tmux sessions."""
-    TITLE = "Smux Session Overview Tool"
+    TITLE = "STmux Session Overview Tool"
 
     def __init__(self) -> None:
         super().__init__()
