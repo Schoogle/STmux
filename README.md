@@ -1,2 +1,2 @@
 # SimpleTmux (STmux)
-Simple Tmux session overview and manager
+Simple Tmux session overview and manager tool

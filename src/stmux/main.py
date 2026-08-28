@@ -5,8 +5,7 @@ from textual.widgets import Header, Footer, OptionList, Static
 from textual.widgets.option_list import Option
 from textual.binding import Binding
 from rich.text import Text
-from stmux.screens import NewSessionScreen
-
+from stmux.screens import NewSessionScreen, RenameSessionScreen, ConfirmDeleteScreen
 class TmuxManager(App):
     """A Textual application to manage tmux sessions."""
     TITLE = "STmux Session Overview Tool"
@@ -21,8 +20,10 @@ class TmuxManager(App):
 
     BINDINGS = [
         Binding("q", "quit", "Quit"),
-        Binding("x", "new_session", "New Session"), 
+        Binding("x", "new_session", "New Session"),
+        Binding("r", "rename_session", "Rename"),
         Binding("delete", "kill_session", "Kill Session"),
+        Binding("shift+delete", "force_kill_session", "Force Kill", show=True),
     ]
 
     def compose(self) -> ComposeResult:
@@ -125,6 +126,25 @@ class TmuxManager(App):
         # Push the popup screen
         self.push_screen(NewSessionScreen(), check_result)
 
+    def action_rename_session(self) -> None:
+        """Fires when 'r' is pressed. Shows the rename modal."""
+        if not self.current_session:
+            return
+
+        old_name = self.current_session
+
+        def check_result(new_name: str | None) -> None:
+            if new_name and new_name != old_name:
+                # Tell tmux rename the session
+                subprocess.run(["tmux", "rename-session", "-t", old_name, new_name])
+
+                # Update tracker so refresh_sessions snaps the cursor to the newly named session
+                self.current_session = new_name
+                self.refresh_sessions()
+
+        # Push the popup screen and pass in the current name
+        self.push_screen(RenameSessionScreen(current_name=old_name), check_result)
+
     async def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
         if not event.option or not event.option.id:
             return
@@ -144,19 +164,40 @@ class TmuxManager(App):
             self.preview_timer.resume()
     
     def action_kill_session(self) -> None:
-        """Fires when 'delete' is pressed. Kills the highlighted tmux session."""
+        """Fires when 'delete' is pressed. Shows confirmation modal."""
         if not self.current_session:
             return
             
         session_name = self.current_session
         
-        # Clear tracker immediately before killing
+        def check_result(confirmed: bool | None) -> None:
+            if confirmed:
+                # Tell tmux to kill it in the background
+                subprocess.run(["tmux", "kill-session", "-t", session_name])
+                
+                # Clear tracker immediately after killing
+                self.current_session = None
+                
+                # Refresh the UI to remove it from the list
+                self.refresh_sessions()
+
+        # Push the confirmation screen
+        self.push_screen(ConfirmDeleteScreen(session_name=session_name), check_result)
+
+    def action_force_kill_session(self) -> None:
+        """Fires when 'shift+delete' is pressed. Instantly nukes the session."""
+        if not self.current_session:
+            return
+            
+        session_name = self.current_session
+        
+        # Clear tracker immediately
         self.current_session = None
         
-        # Tell tmux to kill it in the background
+        # Instantly kill it in the background without asking
         subprocess.run(["tmux", "kill-session", "-t", session_name])
         
-        # Refresh the UI to remove it from the list
+        # Refresh the UI
         self.refresh_sessions()
 
 def main() -> None:
