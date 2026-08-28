@@ -45,14 +45,23 @@ class TmuxManager(App):
         pass
 
     def action_toggle_upside_down(self) -> None:
-        """Toggles the upside-down (reversed lines) state for the active session."""
-        if not self.current_session:
+        """Toggles the upside-down (top-anchored) state for the active session."""
+        list_view = self.query_one("#session-list", OptionList)
+        session_to_toggle = self.current_session
+        
+        # Fallback to the highlighted index if current_session is unassigned
+        if not session_to_toggle and list_view.highlighted is not None:
+            option = list_view.get_option_at_index(list_view.highlighted)
+            if option and option.id:
+                session_to_toggle = option.id
+                
+        if not session_to_toggle:
             return
             
-        if self.current_session in self.upside_down_sessions:
-            self.upside_down_sessions.remove(self.current_session)
+        if session_to_toggle in self.upside_down_sessions:
+            self.upside_down_sessions.remove(session_to_toggle)
         else:
-            self.upside_down_sessions.add(self.current_session)
+            self.upside_down_sessions.add(session_to_toggle)
             
         self.refresh_sessions()
 
@@ -340,7 +349,12 @@ class TmuxManager(App):
             if event.key == "right" and self.current_session:
                 event.prevent_default()
                 container.focus()
-                container.scroll_end(animate=False)
+                
+                # Respect top-anchor ([U]) vs live-tail when entering preview
+                if self.current_session in self.upside_down_sessions:
+                    container.scroll_to(0, 0, animate=False)
+                else:
+                    container.scroll_end(animate=False)
                 
         # Scenario 3: User is scrolling the live preview.
         elif container.has_focus:
