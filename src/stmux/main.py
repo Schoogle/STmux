@@ -5,7 +5,7 @@ from textual.widgets import Header, Footer, OptionList, Static
 from textual.widgets.option_list import Option
 from textual.binding import Binding
 from rich.text import Text
-from screens import NewSessionScreen
+from stmux.screens import NewSessionScreen
 
 class TmuxManager(App):
     """A Textual application to manage tmux sessions."""
