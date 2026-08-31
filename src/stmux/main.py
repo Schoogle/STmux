@@ -17,6 +17,7 @@ class TmuxManager(App):
     def __init__(self) -> None:
         super().__init__()
         self.current_session: str | None = None
+        self.last_previewed_session: str | None = None
         self.preview_timer = None
         self.search_query = ""
         self.upside_down_sessions: set[str] = set()
@@ -81,6 +82,8 @@ class TmuxManager(App):
         else:
             self.upside_down_sessions.add(session_to_toggle)
             
+        # Signal to the preview updater that a requested an anchor change
+        self._anchor_just_toggled = True
         self.refresh_sessions()
 
     def compose(self) -> ComposeResult:
@@ -184,11 +187,11 @@ class TmuxManager(App):
         container = self.query_one("#preview-container", ScrollableContainer)
         preview_window = self.query_one("#preview-window", Static)
         
-        # 1. Grab the current width and height of the Textual preview container
+        # Grab the current width and height of the Textual preview container
         width = container.size.width
         height = container.size.height
 
-        # 2. Resize the underlying tmux window to match the pane dimensions
+        # Resize the underlying tmux window to match the pane dimensions
         if width > 0 and height > 0:
             try:
                 subprocess.run(
@@ -205,29 +208,52 @@ class TmuxManager(App):
                 ["tmux", "capture-pane", "-ep", "-S", "-1000", "-t", session_name]
             )
             raw_text = result.decode('utf-8')
-            
-            # Natural top-to-bottom text order (no line reversal)
             ansi_text = Text.from_ansi(raw_text)
             
-            # 1. Capture state from the container
-            is_focused = container.has_focus
             current_x, current_y = container.scroll_offset
+            max_y = container.max_scroll_y
+            is_top_anchored = session_name in self.upside_down_sessions
             
-            # 2. Update the text
+            # Detect state changes
+            session_changed = getattr(self, "last_previewed_session", None) != session_name
+            self.last_previewed_session = session_name
+            
+            anchor_toggled = getattr(self, "_anchor_just_toggled", False)
+            self._anchor_just_toggled = False
+            
+            # Evaluate if the user scrolled manually
+            if session_changed or anchor_toggled:
+                self._user_scrolled = False
+                self._layout_settling = True
+            elif not getattr(self, "_layout_settling", False):
+                # Only evaluate user scrolling if the layout is completely settled
+                if is_top_anchored:
+                    self._user_scrolled = current_y > 0
+                else:
+                    self._user_scrolled = current_y < max_y
+            
+            # Lock out manual scroll tracking until the UI has settled
+            self._layout_settling = True
             preview_window.update(ansi_text)
             
-            # 3. Restore scroll or pin to top/bottom based on session settings
             def restore_scroll():
-                is_top_anchored = session_name in self.upside_down_sessions
-                
-                if is_focused:
+                if getattr(self, "_user_scrolled", False):
+                    # Lock to your exact scroll position regardless of app focus!
                     container.scroll_to(current_x, current_y, animate=False)
                 elif is_top_anchored:
+                    # Pin to the top
                     container.scroll_to(0, 0, animate=False)
                 else:
+                    # Default behavior: live tail at the bottom
                     container.scroll_end(animate=False)
-                    
-            self.set_timer(0.05, restore_scroll)
+                
+                # Unlock scroll tracking now that the layout is stable
+                self._layout_settling = False
+                
+            # Cancel previous timers to prevent race conditions from double-calls!
+            if hasattr(self, "_scroll_timer"):
+                self._scroll_timer.stop()
+            self._scroll_timer = self.set_timer(0.05, restore_scroll)
                 
         except Exception:
             preview_window.update(f"Could not load preview for {session_name}.")
