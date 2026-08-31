@@ -45,6 +45,23 @@ class TmuxManager(App):
         """Dummy action for the Back footer anchor."""
         pass
 
+    async def attach_to_session(self, session_name: str) -> None:
+        """Helper method to handle suspending the app and attaching to tmux."""
+        if self.preview_timer:
+            self.preview_timer.pause()
+            
+        with self.suspend():
+            # Clear screen buffer instantly to prevent the text flash artifact
+            print("\033[2J\033[H", end="", flush=True)
+            
+            cols, lines = shutil.get_terminal_size()
+            subprocess.run(["tmux", "resize-window", "-t", session_name, "-x", str(cols), "-y", str(lines)])
+            subprocess.run(["tmux", "attach-session", "-t", session_name])
+            
+        self.refresh_sessions()
+        if self.preview_timer:
+            self.preview_timer.resume()
+
     def action_toggle_upside_down(self) -> None:
         """Toggles the upside-down (top-anchored) state for the active session."""
         list_view = self.query_one("#session-list", OptionList)
@@ -248,22 +265,7 @@ class TmuxManager(App):
         if not event.option or not event.option.id:
             return
             
-        session_name = event.option.id
-        
-        if self.preview_timer:
-            self.preview_timer.pause()
-            
-        with self.suspend():
-            # Clear screen buffer instantly to prevent the text flash artifact
-            print("\033[2J\033[H", end="", flush=True)
-            
-            cols, lines = shutil.get_terminal_size()
-            subprocess.run(["tmux", "resize-window", "-t", session_name, "-x", str(cols), "-y", str(lines)])
-            subprocess.run(["tmux", "attach-session", "-t", session_name])
-            
-        self.refresh_sessions()
-        if self.preview_timer:
-            self.preview_timer.resume()
+        await self.attach_to_session(event.option.id)
     
     def action_kill_session(self) -> None:
         """Fires when 'delete' is pressed. Shows confirmation modal."""
@@ -339,20 +341,8 @@ class TmuxManager(App):
         """Attaches to the currently highlighted session upon form submission."""
         if event.input.id == "search-input":
             if self.current_session:
-                if self.preview_timer:
-                    self.preview_timer.pause()
-                    
-                with self.suspend():
-                    print("\033[2J\033[H", end="", flush=True)
-                    
-                    cols, lines = shutil.get_terminal_size()
-                    subprocess.run(["tmux", "resize-window", "-t", self.current_session, "-x", str(cols), "-y", str(lines)])                    
-                    subprocess.run(["tmux", "attach-session", "-t", self.current_session])
-                    
+                await self.attach_to_session(self.current_session)
                 self.action_clear_search()
-                
-                if self.preview_timer:
-                    self.preview_timer.resume()
 
     async def on_key(self, event: Key) -> None:
         """Intercepts raw key presses globally for custom pane navigation."""
@@ -386,6 +376,10 @@ class TmuxManager(App):
             if event.key == "left" or event.key == "escape":
                 event.prevent_default()
                 list_view.focus()
+            # ADD THIS BLOCK to handle "enter" in the preview pane
+            elif event.key == "enter" and self.current_session:
+                event.prevent_default()
+                await self.attach_to_session(self.current_session)
 
     def action_scroll_preview(self) -> None:
         """Fires when 'v' is pressed. Shifts focus to the preview pane for live scrolling."""
