@@ -1,3 +1,4 @@
+import shutil
 import subprocess
 from textual.app import App, ComposeResult
 from textual.containers import Horizontal, Vertical, ScrollableContainer
@@ -255,6 +256,9 @@ class TmuxManager(App):
         with self.suspend():
             # Clear screen buffer instantly to prevent the text flash artifact
             print("\033[2J\033[H", end="", flush=True)
+            
+            cols, lines = shutil.get_terminal_size()
+            subprocess.run(["tmux", "resize-window", "-t", session_name, "-x", str(cols), "-y", str(lines)])
             subprocess.run(["tmux", "attach-session", "-t", session_name])
             
         self.refresh_sessions()
@@ -340,6 +344,9 @@ class TmuxManager(App):
                     
                 with self.suspend():
                     print("\033[2J\033[H", end="", flush=True)
+                    
+                    cols, lines = shutil.get_terminal_size()
+                    subprocess.run(["tmux", "resize-window", "-t", self.current_session, "-x", str(cols), "-y", str(lines)])                    
                     subprocess.run(["tmux", "attach-session", "-t", self.current_session])
                     
                 self.action_clear_search()
