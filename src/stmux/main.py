@@ -381,18 +381,28 @@ class TmuxManager(App):
             
         session_name = self.current_session
         
+        list_view = self.query_one("#session-list", OptionList)
+        idx = list_view.highlighted
+        next_session = None
+        
+        if idx is not None:
+            if idx > 0:
+                # Grab the ID of the session directly above this one
+                next_session = list_view.get_option_at_index(idx - 1).id
+            else:
+                # If we are at the very top, grab the one below it instead
+                try:
+                    next_session = list_view.get_option_at_index(idx + 1).id
+                except Exception:
+                    next_session = None
         def check_result(confirmed: bool | None) -> None:
             if confirmed:
-                # Tell tmux to kill it in the background
                 subprocess.run(["tmux", "kill-session", "-t", session_name])
                 
-                # Clear tracker immediately after killing
-                self.current_session = None
-                
-                # Refresh the UI to remove it from the list
+                # Assign the pre-calculated session instead of None
+                self.current_session = next_session
                 self.refresh_sessions()
 
-        # Push the confirmation screen
         self.push_screen(ConfirmDeleteScreen(session_name=session_name), check_result)
 
     def action_force_kill_session(self) -> None:
@@ -402,13 +412,23 @@ class TmuxManager(App):
             
         session_name = self.current_session
         
-        # Clear tracker immediately
-        self.current_session = None
+        list_view = self.query_one("#session-list", OptionList)
+        idx = list_view.highlighted
+        next_session = None
         
-        # Instantly kill it in the background without asking
+        if idx is not None:
+            if idx > 0:
+                next_session = list_view.get_option_at_index(idx - 1).id
+            else:
+                try:
+                    next_session = list_view.get_option_at_index(idx + 1).id
+                except Exception:
+                    next_session = None
+        
         subprocess.run(["tmux", "kill-session", "-t", session_name])
         
-        # Refresh the UI
+        # Assign the pre-calculated session instead of None
+        self.current_session = next_session
         self.refresh_sessions()
 
     def action_search(self) -> None:
