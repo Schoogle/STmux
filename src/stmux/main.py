@@ -1,5 +1,7 @@
 import shutil
 import subprocess
+import json
+from pathlib import Path
 from textual.app import App, ComposeResult
 from textual.containers import Horizontal, Vertical, ScrollableContainer
 from textual.widgets import Header, Footer, OptionList, Static
@@ -20,7 +22,37 @@ class TmuxManager(App):
         self.last_previewed_session: str | None = None
         self.preview_timer = None
         self.search_query = ""
+
+        # --- STATE MANAGEMENT ---
+        self.state_file = Path.home() / ".config" / "stmux" / "state.json"
         self.upside_down_sessions: set[str] = set()
+        self.session_order: list[str] = []
+        self.load_state()
+        # ------------------------
+
+    def load_state(self) -> None:
+        """Loads the custom session order and upside-down settings from disk."""
+        if self.state_file.exists():
+            try:
+                with open(self.state_file, "r") as f:
+                    state = json.load(f)
+                    self.session_order = state.get("session_order", [])
+                    self.upside_down_sessions = set(state.get("upside_down_sessions", []))
+            except Exception:
+                pass # If the file is corrupted, it will just start fresh
+
+    def save_state(self) -> None:
+        """Saves the current session order and upside-down settings to disk."""
+        try:
+            # Ensure the ~/.config/stmux/ directory exists
+            self.state_file.parent.mkdir(parents=True, exist_ok=True)
+            with open(self.state_file, "w") as f:
+                json.dump({
+                    "session_order": self.session_order,
+                    "upside_down_sessions": list(self.upside_down_sessions)
+                }, f)
+        except Exception:
+            pass
 
     # Point to external stylesheet
     CSS_PATH = "styles.tcss"
@@ -34,6 +66,8 @@ class TmuxManager(App):
         Binding("f", "search", "Search"),
         Binding("escape", "clear_search", "Clear Search", show=False),
         Binding("u", "toggle_upside_down", "Upside Down", show=True, priority=True),
+        Binding("shift+up", "move_up", "Move Up", show=False, priority=True),     # <-- New
+        Binding("shift+down", "move_down", "Move Down", show=False, priority=True), #
         Binding("f22", "dummy_back", "Back", key_display="◀", show=True),
         Binding("f23", "dummy_preview", "Preview", key_display="▶", show=True),
     ]
@@ -85,6 +119,34 @@ class TmuxManager(App):
         # Signal to the preview updater that a requested an anchor change
         self._anchor_just_toggled = True
         self.refresh_sessions()
+    
+    def action_move_up(self) -> None:
+        """Moves the currently highlighted session up in the custom order."""
+        if not self.current_session or self.search_query:
+            return  # Prevent moving while actively searching
+            
+        try:
+            idx = self.session_order.index(self.current_session)
+            if idx > 0:
+                # Swap the item with the one directly above it
+                self.session_order[idx], self.session_order[idx - 1] = self.session_order[idx - 1], self.session_order[idx]
+                self.refresh_sessions()
+        except ValueError:
+            pass
+
+    def action_move_down(self) -> None:
+        """Moves the currently highlighted session down in the custom order."""
+        if not self.current_session or self.search_query:
+            return  # Prevent moving while actively searching
+            
+        try:
+            idx = self.session_order.index(self.current_session)
+            if idx < len(self.session_order) - 1:
+                # Swap the item with the one directly below it
+                self.session_order[idx], self.session_order[idx + 1] = self.session_order[idx + 1], self.session_order[idx]
+                self.refresh_sessions()
+        except ValueError:
+            pass
 
     def compose(self) -> ComposeResult:
         yield Header()
@@ -122,22 +184,40 @@ class TmuxManager(App):
         self.current_session = None
         
         try:
+            # Ask tmux for the exact creation timestamp AND the session name
             result = subprocess.check_output(
-                ["tmux", "list-sessions", "-F", "#{session_name}"], 
+                ["tmux", "list-sessions", "-F", "#{session_created} #{session_name}"], 
                 text=True
             )
-            # Strip whitespace from each session line to prevent lookup mismatches
-            sessions = [s.strip() for s in result.strip().split("\n") if s.strip()]
             
-            if not sessions:
+            raw_lines = [line.strip() for line in result.strip().split("\n") if line.strip()]
+            
+            if not raw_lines:
                 raise subprocess.CalledProcessError(1, "tmux")
                 
-            reversed_sessions = list(reversed(sessions))
+            # --- CREATION TIME SORTING LOGIC ---
+            # Sort the lines chronologically by the integer timestamp (the first part of the string)
+            raw_lines.sort(key=lambda x: int(x.split(" ", 1)[0]))
+            
+            # Extract just the session names now that they are sorted chronologically
+            sessions = [line.split(" ", 1)[1] for line in raw_lines]
+            
+            if not self.session_order:
+                # First run: absorb the chronologically sorted list
+                self.session_order = sessions.copy()
+            else:
+                # Retain custom manual order for existing sessions
+                current_order = [s for s in self.session_order if s in sessions]
+                # Identify any brand-new sessions not in our tracker yet
+                new_sessions = [s for s in sessions if s not in self.session_order]
+                # Append newly created sessions to the bottom of the custom list
+                self.session_order = current_order + new_sessions
+            # -----------------------------------
                 
             if self.search_query:
-                filtered_sessions = [s for s in reversed_sessions if self.search_query in s.lower()]
+                filtered_sessions = [s for s in self.session_order if self.search_query in s.lower()]
             else:
-                filtered_sessions = reversed_sessions
+                filtered_sessions = self.session_order
             
             target_index = 0
             for i, session in enumerate(filtered_sessions):
@@ -152,7 +232,6 @@ class TmuxManager(App):
                 
                 display_str = base_display + suffix
                 
-                # Wrap in Text() to treat [U] as literal text instead of a Rich markup tag
                 list_view.add_option(Option(Text(display_str), id=session))
                 
                 if session == previous_session:
@@ -167,6 +246,7 @@ class TmuxManager(App):
                 self.query_one("#preview-window", Static).update(
                     "No sessions match your search."
                 )
+            self.save_state()
                 
         except subprocess.CalledProcessError:
             self.current_session = None
