@@ -343,6 +343,7 @@ class TmuxManager(App):
         def check_result(session_name: str | None) -> None:
             if session_name:
                 subprocess.run(["tmux", "new-session", "-d", "-s", session_name])
+                self.current_session = session_name
                 self.refresh_sessions()
 
         # Push the popup screen
